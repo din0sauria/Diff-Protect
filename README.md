@@ -1,16 +1,4 @@
-
-<div align="center">
-
-<h2>Toward effective protection against diffusion-based mimicry through score distillation [ICLR'2024]</h2>
-
-**[Haotian Xue <sup>1](https://xavihart.github.io/), [Chumeng Liang <sup>2,3](https://caradryanliang.github.io/), [Xiaoyu Wu <sup>2](https://openreview.net/profile?id=~Xiaoyu_Wu1), and [Yongxin Chen <sup>1](https://yongxin.ae.gatech.edu/)**
-
-
-<sup>1</sup> Georgia Tech <sup>2</sup> SJTU <sup>3</sup> USC
-
-
-</div>
-
+# 
 
 
 
@@ -24,10 +12,6 @@ TL;DR : novel insights into attacks agasint LDM, a more effective protection aga
 - [11/24/2023] Paper finally shown on [Arxiv](https://arxiv.org/abs/2311.12832)
 - [09/27/2023] Paper will be released soon!
 - [09/27/2023] Our repo is alive!
-
-
-
-
 
 
 
@@ -117,14 +101,3 @@ the output includes: `[NAME]_attacked.png` which is the attacked image, `[NAME]_
 
 [From let to right]: AdvDM, Mist, SDS(-), using eps=16, SDS-version is much more effective than the previous two methods
 
-
-## Cited as:
-
-```
-@inproceedings{xue2023toward,
-  title={Toward effective protection against diffusion-based mimicry through score distillation},
-  author={Xue, Haotian and Liang, Chumeng and Wu, Xiaoyu and Chen, Yongxin},
-  booktitle={The Twelfth International Conference on Learning Representations},
-  year={2023}
-}
-```
