@@ -1,0 +1,16 @@
+attack:
+    epsilon: 16
+    steps: 100
+    input_size: 1024
+    mode: A               # MMDiT attack mode: A/B/C/D
+    img_path: test_images/to_protect
+    output_path: out_sd3/
+    alpha: 1
+    g_mode: "+"            # Gradient direction: '+' (maximize) or '-' (minimize)
+    use_wandb: False
+    project_name: sd3_mist
+    textual_weight: 1.0    # Weight for textual loss (VAE latent push)
+    mmdit_weight: 1.0      # Weight for MMDiT-specific loss
+    device: "cuda:2"       # Target GPU device
+    max_exp_num: 100
+    model_name: "stabilityai/stable-diffusion-3.5-medium"
