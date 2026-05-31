@@ -356,15 +356,16 @@ def modality_imbalance_loss(img_stream_feats, txt_stream_feats):
 class SD3_Linf_PGD:
     """PGD attack for SD3 with MMDiT-specific loss functions.
 
-    Supports 4 attack modes:
+    Supports 5 attack modes:
+        O: Textual Loss only (baseline, no MMDiT forward pass)
         A: Cross-Modal Alignment Disruption
         B: Attention Feature Shift
         C: Temporal Consistency Break
         D: Modality Imbalance
 
-    And combinations with TEXTUAL LOSS (VAE latent push):
-        mode='A' => MMDiT loss A only
-        mode='A+T' => MMDiT loss A + Textual Loss (joint)
+    Modes A-D combine with TEXTUAL LOSS (VAE latent push):
+        JOINT LOSS = textual_weight * TEXTUAL LOSS + mmdit_weight * MMDiT LOSS
+    Mode O uses TEXTUAL LOSS only as a baseline comparison.
     """
 
     def __init__(self, net, fn, epsilon, steps, eps_iter, clip_min=-1.0, clip_max=1.0,
@@ -380,7 +381,7 @@ class SD3_Linf_PGD:
             clip_min, clip_max: pixel value range
             targeted: whether attack is targeted
             g_mode: gradient direction ('+' or '-')
-            mmdit_mode: which MMDiT loss to use ('A', 'B', 'C', 'D')
+            mmdit_mode: which MMDiT loss to use ('O', 'A', 'B', 'C', 'D')
             capture_attn: whether to capture attention maps (needed for loss A)
             textual_weight: weight for textual loss component
             mmdit_weight: weight for MMDiT loss component
@@ -494,8 +495,28 @@ class SD3_Linf_PGD:
 
         This follows the design in SD3对抗扰动设计.md:
         JOINT LOSS = TEXTUAL LOSS + lambda * MMDiT LOSS
+
+        Mode 'O': Textual Loss only (baseline, skips MMDiT forward for speed)
         """
         pipe = self.net.pipe
+
+        # ---- Mode O: Textual Loss only (baseline) ----
+        if self.mmdit_mode == 'O':
+            z_adv = pipe.vae.encode(X_adv.to(pipe.vae.dtype)).latent_dist.mean
+            z_adv = (z_adv - pipe.vae.config.shift_factor) * pipe.vae.config.scaling_factor
+            z_adv = z_adv.to(X_adv.dtype)
+
+            textual_loss = torch.tensor(0.0, device=device)
+            if target_image is not None:
+                with torch.no_grad():
+                    z_target = pipe.vae.encode(target_image.to(pipe.vae.dtype)).latent_dist.mean
+                    z_target = (z_target - pipe.vae.config.shift_factor) * pipe.vae.config.scaling_factor
+                    z_target = z_target.to(X_adv.dtype).detach()
+                textual_loss = self.cirt(z_adv, z_target)
+
+            return textual_loss
+
+        # ---- Modes A/B/C/D: Joint Loss with MMDiT ----
         hook = AttentionMapHook()
         transformer = pipe.transformer
 

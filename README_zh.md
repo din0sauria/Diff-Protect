@@ -96,7 +96,7 @@ attack:
     epsilon: 16           # L_inf 扰动预算（像素单位）
     steps: 100            # 攻击迭代次数
     input_size: 1024      # 图像分辨率
-    mode: A               # MMDiT 攻击模式：A/B/C/D
+    mode: A               # MMDiT 攻击模式：O/A/B/C/D
     img_path: test_images/to_protect
     output_path: out_sd3/
     alpha: 1              # 步长
@@ -113,6 +113,7 @@ attack:
 
 | 模式 | 名称 | 攻击目标 | 原理 |
 |------|------|----------|------|
+| **O** | 仅纹理损失（基线） | VAE 潜空间 | 将 VAE 潜空间表示推向错误方向；不经过 MMDiT 前向传播，作为对比基线 |
 | **A** | 跨模态对齐破坏 | Joint Attention | 最大化 text→image 注意力权重的熵，使文本到图像的语义注入变得均匀/随机 |
 | **B** | 注意力特征偏移 | MMDiT 中间层特征 | 最大化对抗样本与干净样本特征的余弦距离 + 破坏 Gram 矩阵（纹理/风格统计量） |
 | **C** | 时序一致性破坏 | Flow Matching 轨迹 | 最大化对抗样本与干净样本速度预测（v-prediction）之间的夹角，使 ODE 去噪轨迹发散 |
@@ -121,6 +122,9 @@ attack:
 #### 使用方式
 
 ```bash
+# 模式 O：仅纹理损失（基线）
+python code/diff_mist_SD3.py attack.mode='O' attack.g_mode='+' attack.device="cuda:2"
+
 # 模式 A：跨模态对齐破坏
 python code/diff_mist_SD3.py attack.mode='A' attack.g_mode='+' attack.device="cuda:2"
 
@@ -192,7 +196,9 @@ Diff-Protect/
 
 ### SD 3.5 MMDiT 损失函数
 
-SD3 的 MMDiT 使用 Joint Attention，文本 token 和图像潜空间 token 拼接后共同进行自注意力计算，扰动可以在模态间传播。四种 MMDiT 损失分别利用该架构的不同特性：
+SD3 的 MMDiT 使用 Joint Attention，文本 token 和图像潜空间 token 拼接后共同进行自注意力计算，扰动可以在模态间传播。五种攻击模式如下：
+
+0. **模式 O — 仅纹理损失（基线）**：仅使用 VAE 纹理损失 $\min_\delta \|\mathcal{E}(y) - \mathcal{E}(x+\delta)\|_2$，将潜空间表示推向错误目标。无需 MMDiT 前向传播，速度显著更快。作为对比基线，用于评估 MMDiT 专用损失的额外增益。
 
 1. **损失 A — 跨模态对齐破坏**：在 Joint Attention 中，text→image 注意力块（$\text{attn}[:N_i, N_i:]$）反映了语义注入强度。最大化其注意力熵使语义引导变得均匀/随机，导致生成结果偏离文本提示。
 

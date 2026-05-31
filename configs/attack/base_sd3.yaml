@@ -2,7 +2,7 @@ attack:
     epsilon: 16
     steps: 100
     input_size: 1024
-    mode: A               # MMDiT attack mode: A/B/C/D
+    mode: A               # MMDiT attack mode: O/A/B/C/D
     img_path: test_images/to_protect
     output_path: out_sd3/
     alpha: 1

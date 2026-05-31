@@ -96,7 +96,7 @@ attack:
     epsilon: 16           # l_inf budget (pixel units)
     steps: 100            # attack iterations
     input_size: 1024      # image resolution
-    mode: A               # MMDiT attack mode: A/B/C/D
+    mode: A               # MMDiT attack mode: O/A/B/C/D
     img_path: test_images/to_protect
     output_path: out_sd3/
     alpha: 1              # step size
@@ -113,6 +113,7 @@ The joint loss follows the design: **JOINT LOSS = TEXTUAL LOSS + λ · MMDiT LOS
 
 | Mode | Name | Target | Principle |
 |------|------|--------|-----------|
+| **O** | Textual Loss Only (baseline) | VAE latent space | Push VAE latent toward a wrong direction; no MMDiT forward pass, used as baseline comparison |
 | **A** | Cross-Modal Alignment Disruption | Joint Attention | Maximize entropy of text→image attention weights, making semantic injection from text uniform/random |
 | **B** | Attention Feature Shift | MMDiT intermediate features | Maximize cosine distance between adversarial and clean features + disrupt Gram matrix (style statistics) |
 | **C** | Temporal Consistency Break | Flow matching trajectory | Maximize angle between adversarial and clean velocity predictions (v-prediction), causing ODE trajectory to diverge |
@@ -121,6 +122,9 @@ The joint loss follows the design: **JOINT LOSS = TEXTUAL LOSS + λ · MMDiT LOS
 #### Usage
 
 ```bash
+# Mode O: Textual Loss only (baseline)
+python code/diff_mist_SD3.py attack.mode='O' attack.g_mode='+' attack.device="cuda:2"
+
 # Mode A: Cross-Modal Alignment Disruption
 python code/diff_mist_SD3.py attack.mode='A' attack.g_mode='+' attack.device="cuda:2"
 
@@ -191,7 +195,9 @@ Diff-Protect/
 
 ### SD 3.5 MMDiT Loss Functions
 
-SD3's MMDiT uses Joint Attention where text tokens and image latent tokens are concatenated for self-attention, enabling cross-modal perturbation propagation. The four MMDiT losses exploit different aspects of this architecture:
+SD3's MMDiT uses Joint Attention where text tokens and image latent tokens are concatenated for self-attention, enabling cross-modal perturbation propagation. The five attack modes are:
+
+0. **Mode O — Textual Loss Only (Baseline)**: Only uses the VAE textual loss $\min_\delta \|\mathcal{E}(y) - \mathcal{E}(x+\delta)\|_2$, pushing the latent representation toward a wrong target. No MMDiT forward pass is needed, making it significantly faster. Serves as the baseline to evaluate the added benefit of MMDiT-specific losses.
 
 1. **Loss A — Cross-Modal Alignment Disruption**: In Joint Attention, the text→image attention block ($\text{attn}[:N_i, N_i:]$) reflects how semantics are injected. Maximizing its entropy makes the semantic guidance uniform/random, causing generation to lose prompt alignment.
 

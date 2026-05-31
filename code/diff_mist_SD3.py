@@ -9,6 +9,7 @@
 #   python code/diff_mist_SD3.py attack.mode='D' attack.g_mode='-' attack.device="cuda:1"
 #
 # Modes:
+#   O: Textual Loss only (仅纹理损失，作为对比基线)
 #   A: Cross-Modal Alignment Disruption (破坏跨模态对齐)
 #   B: Attention Feature Shift (特征偏移)
 #   C: Temporal Consistency Break (时序一致性破坏)
@@ -168,7 +169,8 @@ class SD3_target_model(nn.Module):
     def forward(self, x):
         """Compute the joint loss for PGD attack.
 
-        JOINT LOSS = textual_weight * TEXTUAL LOSS + mmdit_weight * MMDiT LOSS
+        Mode O: Textual Loss only (baseline, no MMDiT forward pass)
+        Modes A-D: JOINT LOSS = textual_weight * TEXTUAL LOSS + mmdit_weight * MMDiT LOSS
 
         The returned loss is what PGD will minimize. For g_mode='+', we negate
         to achieve maximization.
@@ -187,6 +189,10 @@ class SD3_target_model(nn.Module):
 
         # ---- Textual Loss (VAE latent push) ----
         z_x, textual_loss = self.get_components(x)
+
+        # ---- Mode O: Textual Loss only (baseline) ----
+        if self.mode == 'O':
+            return textual_loss * g_dir
 
         # ---- MMDiT Loss ----
         hook = AttentionMapHook()
