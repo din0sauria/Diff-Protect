@@ -255,7 +255,11 @@ def plot_mode_comparison(images, modes=None, output_dir='.', figsize=(8, 5),
 def plot_component_comparison(images, modes=None, output_dir='.', figsize=(8, 5),
                               dpi=150, smooth_window=None, log_scale=False,
                               normalize=False):
-    """Plot textual / mmdit / total loss components for each mode separately."""
+    """Plot textual / mmdit / total loss components for each mode separately.
+
+    Uses twin y-axes (left=textual, right=mmdit) so that differently-scaled
+    components are both readable without normalization.
+    """
     mode_order = ['O', 'A', 'B', 'C', 'D']
 
     for img_name, curves in images.items():
@@ -275,7 +279,10 @@ def plot_component_comparison(images, modes=None, output_dir='.', figsize=(8, 5)
                 continue
 
             ax = axes[0, col]
-            for comp_key in ['total', 'textual', 'mmdit']:
+            ax2 = ax.twinx()  # right y-axis for mmdit
+
+            # Left axis: total + textual
+            for comp_key in ['total', 'textual']:
                 arr = _smooth(loss_data[comp_key], smooth_window)
                 if normalize:
                     arr = _normalize(arr)
@@ -287,14 +294,35 @@ def plot_component_comparison(images, modes=None, output_dir='.', figsize=(8, 5)
                         label=COMPONENT_LABELS[comp_key],
                         alpha=0.85)
 
+            # Right axis: mmdit (typically much smaller scale)
+            mmdit_arr = _smooth(loss_data['mmdit'], smooth_window)
+            if normalize:
+                mmdit_arr = _normalize(mmdit_arr)
+            steps = np.arange(len(mmdit_arr))
+            ax2.plot(steps, mmdit_arr,
+                     color=COMPONENT_COLORS['mmdit'],
+                     linestyle=COMPONENT_LINESTYLES['mmdit'],
+                     linewidth=1.6,
+                     label=COMPONENT_LABELS['mmdit'],
+                     alpha=0.85)
+
             ax.set_xlabel('PGD Step', fontsize=10)
-            ax.set_ylabel('Normalized Loss' if normalize else 'Loss', fontsize=10)
+            ax.set_ylabel('Loss (total / textual)', fontsize=10, color='#333333')
+            ax2.set_ylabel('MMDiT Loss', fontsize=10, color=COMPONENT_COLORS['mmdit'])
+            ax.tick_params(axis='y', labelcolor='#333333')
+            ax2.tick_params(axis='y', labelcolor=COMPONENT_COLORS['mmdit'])
             ax.set_title(f'Mode {mode}', fontsize=12, fontweight='bold')
-            ax.legend(fontsize=8, loc='best', framealpha=0.9)
+
+            # Merge legends from both axes
+            lines1, labels1 = ax.get_legend_handles_labels()
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            ax.legend(lines1 + lines2, labels1 + labels2, fontsize=7, loc='best', framealpha=0.9)
+
             ax.grid(True, alpha=0.3)
             ax.xaxis.set_major_locator(MaxNLocator(integer=True))
             if log_scale:
                 ax.set_yscale('log')
+                ax2.set_yscale('log')
 
             col += 1
 
