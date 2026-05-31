@@ -192,6 +192,8 @@ class SD3_target_model(nn.Module):
 
         # ---- Mode O: Textual Loss only (baseline) ----
         if self.mode == 'O':
+            # Store components for logging
+            self._last_components = {'textual': textual_loss.item(), 'mmdit': 0.0}
             return textual_loss * g_dir
 
         # ---- MMDiT Loss ----
@@ -262,6 +264,12 @@ class SD3_target_model(nn.Module):
         # Following mist design: JOINT LOSS = TEXTUAL LOSS + lambda * MMDiT LOSS
         # g_dir controls gradient direction for PGD optimization
         joint_loss = self.textual_weight * textual_loss * g_dir + self.mmdit_weight * mmdit_loss * g_dir
+
+        # Store components for logging
+        self._last_components = {
+            'textual': textual_loss.item(),
+            'mmdit': mmdit_loss.item() if isinstance(mmdit_loss, torch.Tensor) else float(mmdit_loss),
+        }
 
         return joint_loss
 
@@ -414,7 +422,7 @@ def infer(img: PIL.Image.Image, config, tar_img: PIL.Image.Image = None,
         mmdit_weight=mmdit_weight,
     )
 
-    attack_output, loss_all = attack.pgd_sd3(
+    attack_output, loss_history = attack.pgd_sd3(
         X=data_source,
         target_image=target_info,
     )
@@ -430,7 +438,7 @@ def infer(img: PIL.Image.Image, config, tar_img: PIL.Image.Image = None,
     save_adv = torch.clamp((output + 1.0) / 2.0, min=0.0, max=1.0).detach()
     grid_adv = 255. * rearrange(save_adv, 'c h w -> h w c').cpu().numpy()
 
-    return grid_adv, sdedit_results, loss_all
+    return grid_adv, sdedit_results, loss_history
 
 
 def _sdedit_sd3(net, x_adv, device, t_list=None, num_steps=28):
@@ -608,7 +616,7 @@ def main(cfg: DictConfig):
         img = load_image_from_path(image_path, input_size)
         tar_img = load_image_from_path(target_image_path, input_size) if os.path.exists(target_image_path) else None
 
-        output_image, sdedit_results, loss_all = infer(img, config, tar_img, device=device)
+        output_image, sdedit_results, loss_history = infer(img, config, tar_img, device=device)
 
         # Save adversarial image
         output = Image.fromarray(output_image.astype(np.uint8))
@@ -623,10 +631,13 @@ def main(cfg: DictConfig):
                 pil_img.save(sdedit_path)
         print(f'SDEdit takes: {time.time() - time_start_sdedit:.2f}s')
 
-        # Save loss curve
-        if loss_all:
-            loss_path = output_path + f'{file_name}_loss.npy'
-            np.save(loss_path, np.array(loss_all))
+        # Save loss history (component losses)
+        if loss_history and len(loss_history['total']) > 0:
+            loss_path = output_path + f'{file_name}_loss.npz'
+            np.savez(loss_path, **{k: np.array(v) for k, v in loss_history.items()})
+            cprint(f'Loss saved: total={loss_history["total"][-1]:.4f}, '
+                   f'textual={loss_history["textual"][-1]:.4f}, '
+                   f'mmdit={loss_history["mmdit"][-1]:.4f}', 'g')
 
         print(f'Total time: {time.time() - time_start:.2f}s')
 

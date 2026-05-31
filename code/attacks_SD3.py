@@ -413,7 +413,7 @@ class SD3_Linf_PGD:
 
         Returns:
             X_adv: adversarial image tensor
-            loss_all: list of loss values per iteration
+            loss_history: dict of lists with keys 'total', 'textual', 'mmdit' per iteration
         """
         device = X.device
 
@@ -422,7 +422,7 @@ class SD3_Linf_PGD:
         else:
             X_adv = X.clone().detach()
 
-        loss_all = []
+        loss_history = {'total': [], 'textual': [], 'mmdit': []}
         pbar = tqdm(range(self.iters), desc=f"SD3-PGD mode={self.mmdit_mode}")
 
         # Pre-compute clean features for loss B (feature divergence)
@@ -435,11 +435,12 @@ class SD3_Linf_PGD:
 
             X_adv.requires_grad_(True)
 
-            # Compute joint loss
-            loss = self._compute_loss(X_adv, X, target_image, feat_clean_list, device)
+            # Compute joint loss (returns dict with component losses)
+            loss, components = self._compute_loss(X_adv, X, target_image, feat_clean_list, device)
 
             pbar.set_description(
-                f"SD3-PGD mode={self.mmdit_mode} | Loss {loss.item():.5f} | step {actual_step_size:.4f}"
+                f"SD3-PGD mode={self.mmdit_mode} | total={loss.item():.3f} "
+                f"textual={components['textual']:.3f} mmdit={components['mmdit']:.3f}"
             )
 
             loss.backward()
@@ -452,12 +453,14 @@ class SD3_Linf_PGD:
             # Clip to valid range
             X_adv = torch.clamp(X_adv, min=self.clip_min, max=self.clip_max)
 
-            loss_all.append(loss.item())
+            loss_history['total'].append(loss.item())
+            loss_history['textual'].append(components['textual'])
+            loss_history['mmdit'].append(components['mmdit'])
             X_adv.grad = None
 
             torch.cuda.empty_cache()
 
-        return X_adv, loss_all
+        return X_adv, loss_history
 
     def _compute_clean_features(self, X_clean):
         """Compute clean image features through MMDiT for loss B comparison."""
@@ -497,6 +500,11 @@ class SD3_Linf_PGD:
         JOINT LOSS = TEXTUAL LOSS + lambda * MMDiT LOSS
 
         Mode 'O': Textual Loss only (baseline, skips MMDiT forward for speed)
+
+        Returns:
+            (loss_tensor, components_dict) where components_dict has keys:
+                'textual': float, textual loss value
+                'mmdit': float, mmdit loss value
         """
         pipe = self.net.pipe
 
@@ -506,6 +514,7 @@ class SD3_Linf_PGD:
             z_adv = (z_adv - pipe.vae.config.shift_factor) * pipe.vae.config.scaling_factor
             z_adv = z_adv.to(X_adv.dtype)
 
+            textual_loss_val = 0.0
             textual_loss = torch.tensor(0.0, device=device)
             if target_image is not None:
                 with torch.no_grad():
@@ -513,8 +522,9 @@ class SD3_Linf_PGD:
                     z_target = (z_target - pipe.vae.config.shift_factor) * pipe.vae.config.scaling_factor
                     z_target = z_target.to(X_adv.dtype).detach()
                 textual_loss = self.cirt(z_adv, z_target)
+                textual_loss_val = textual_loss.item()
 
-            return textual_loss
+            return textual_loss, {'textual': textual_loss_val, 'mmdit': 0.0}
 
         # ---- Modes A/B/C/D: Joint Loss with MMDiT ----
         hook = AttentionMapHook()
@@ -592,12 +602,14 @@ class SD3_Linf_PGD:
 
         # ---- Joint Loss ----
         # JOINT LOSS = TEXTUAL LOSS + lambda * MMDiT LOSS
-        # For gradient ascent (g_mode='+'), we maximize the joint loss
-        # PGD minimizes the returned loss, so we negate for maximization
         joint_loss = self.textual_weight * textual_loss + self.mmdit_weight * mmdit_loss
 
         # Clean up hooks
         hook.remove()
         restore_processors(transformer)
 
-        return joint_loss
+        components = {
+            'textual': textual_loss.item(),
+            'mmdit': mmdit_loss.item() if isinstance(mmdit_loss, torch.Tensor) else float(mmdit_loss),
+        }
+        return joint_loss, components
