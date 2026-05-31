@@ -13,4 +13,4 @@ attack:
     mmdit_weight: 1.0      # Weight for MMDiT-specific loss
     device: "cuda:2"       # Target GPU device
     max_exp_num: 100
-    model_name: "stabilityai/stable-diffusion-3.5-medium"
+    model_name: "stabilityai/stable-diffusion-3.5-medium"  # ModelScope model ID (uses local cache)

@@ -278,17 +278,17 @@ def init(epsilon: int = 16, steps: int = 100, alpha: int = 1,
         input_prompt: text prompt for conditioning
         textual_weight: weight for textual loss component
         mmdit_weight: weight for MMDiT loss component
-        model_name: HuggingFace model ID for SD3
+        model_name: ModelScope model ID for SD3
 
     Returns:
         dict with 'net', 'fn', 'parameters'
     """
-    from diffusers import StableDiffusion3Pipeline
+    from modelscope import StableDiffusion3Pipeline
 
-    print(f"Loading SD3 model: {model_name}")
+    print(f"Loading SD3 model from ModelScope: {model_name}")
     print(f"Target device: {device}")
 
-    # Load SD3 pipeline
+    # Load SD3 pipeline from ModelScope (uses local cache)
     pipe = StableDiffusion3Pipeline.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,

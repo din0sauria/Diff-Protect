@@ -14,7 +14,6 @@ Diff-Protect generates imperceptible adversarial perturbations that, when added 
 | Text Encoder | CLIP × 1 | CLIP-L + CLIP-G + T5 |
 | Attention | Cross-Attention | Joint Attention (dual-stream) |
 | Attack Losses | Semantic / Textual / Joint | Textual + 4 MMDiT-specific losses |
-| Conda Env | `mist` | `dino` |
 
 ---
 
@@ -38,16 +37,15 @@ mv sd-v1-4.ckpt ckpt/model.ckpt
 
 ### SD 3.5 Environment
 
-Use the `dino` conda environment with PyTorch 2.0+ and diffusers:
+Use the `dino` conda environment with PyTorch 2.0+ and modelscope:
 
 ```bash
 conda activate dino
-# diffusers, transformers, accelerate should already be installed
+# modelscope, diffusers, transformers, accelerate should already be installed
 ```
 
-The SD 3.5 model weights are automatically downloaded from HuggingFace on first run (`stabilityai/stable-diffusion-3.5-medium`).
+SD 3.5 model weights are loaded from ModelScope (`stabilityai/stable-diffusion-3.5-medium`), which uses the local cache at `~/.cache/modelscope/hub/`. The model will be automatically downloaded on first run.
 
----
 
 ## Run the Protection
 
@@ -88,7 +86,6 @@ The output includes:
 
 *[From left to right]: AdvDM, Mist, SDS(-), using eps=16. SDS-version is much more effective.*
 
----
 
 ### SD 3.5 MMDiT Attacks
 
@@ -107,7 +104,7 @@ attack:
     textual_weight: 1.0   # weight for textual loss (VAE latent push)
     mmdit_weight: 1.0     # weight for MMDiT-specific loss
     device: "cuda:2"      # GPU device
-    model_name: "stabilityai/stable-diffusion-3.5-medium"
+    model_name: "stabilityai/stable-diffusion-3.5-medium"  # ModelScope model ID
 ```
 
 #### MMDiT Attack Modes
@@ -150,8 +147,6 @@ The output includes:
 - `[NAME]_sdedit_noise_0.5.png` — SDEdit denoising from noise level 0.5
 - `[NAME]_loss.npy` — loss curve over PGD iterations
 
----
-
 ## Project Structure
 
 ```
@@ -186,8 +181,6 @@ Diff-Protect/
 └── README.md
 ```
 
----
-
 ## Technical Details
 
 ### SD v1.4 Loss Functions
@@ -208,16 +201,3 @@ SD3's MMDiT uses Joint Attention where text tokens and image latent tokens are c
 
 4. **Loss D — Modality Imbalance**: MMDiT has separate text and image streams that interact only through Joint Attention. Forcing the image stream's feature variance to explode while pushing cross-modal projections (Q_img, K_txt) toward orthogonality creates a "rejection" effect in the joint fusion.
 
----
-
-## Citation
-
-If you find this work useful, please cite:
-
-```bibtex
-@article{xue2023mist,
-  title={Mist: Towards Improved Adversarial Examples for Diffusion Models},
-  author={Xue, Haotian and et al.},
-  year={2023}
-}
-```

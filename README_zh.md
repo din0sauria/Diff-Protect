@@ -37,14 +37,14 @@ mv sd-v1-4.ckpt ckpt/model.ckpt
 
 ### SD 3.5 环境
 
-使用 `dino` conda 环境（需安装 PyTorch 2.0+ 及 diffusers）：
+使用 `dino` conda 环境（需安装 PyTorch 2.0+ 及 modelscope）：
 
 ```bash
 conda activate dino
-# diffusers, transformers, accelerate 应已预装
+# modelscope, diffusers, transformers, accelerate 应已预装
 ```
 
-SD 3.5 模型权重会在首次运行时自动从 HuggingFace 下载（`stabilityai/stable-diffusion-3.5-medium`）。
+SD 3.5 模型权重从 ModelScope 加载（`stabilityai/stable-diffusion-3.5-medium`），使用本地缓存 `~/.cache/modelscope/hub/`，首次运行时自动下载。
 
 
 ## 运行防护
@@ -104,7 +104,7 @@ attack:
     textual_weight: 1.0   # 纹理损失权重（VAE 潜空间推离）
     mmdit_weight: 1.0     # MMDiT 专用损失权重
     device: "cuda:2"      # GPU 设备
-    model_name: "stabilityai/stable-diffusion-3.5-medium"
+    model_name: "stabilityai/stable-diffusion-3.5-medium"  # ModelScope 模型 ID
 ```
 
 #### MMDiT 攻击模式
@@ -181,7 +181,6 @@ Diff-Protect/
 └── README.md
 ```
 
----
 
 ## 技术细节
 
@@ -202,17 +201,3 @@ SD3 的 MMDiT 使用 Joint Attention，文本 token 和图像潜空间 token 拼
 3. **损失 C — 时序一致性破坏**：SD3 使用基于 Flow Matching 的 v-预测。通过最大化对抗样本与干净样本速度预测之间的夹角（$\min \cos(v_{adv}, v_{clean})$），使去噪轨迹发散，后续步骤的非线性将进一步放大扰动。
 
 4. **损失 D — 模态不平衡**：MMDiT 拥有独立的文本流和图像流，仅在 Joint Attention 中交互。强制图像流特征的方差异常增大，同时将跨模态投影（Q_img, K_txt）推向正交，在联合融合中产生"排异反应"。
-
----
-
-## 引用
-
-如果您觉得本项目有帮助，请引用：
-
-```bibtex
-@article{xue2023mist,
-  title={Mist: Towards Improved Adversarial Examples for Diffusion Models},
-  author={Xue, Haotian and et al.},
-  year={2023}
-}
-```
