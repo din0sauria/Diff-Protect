@@ -70,12 +70,12 @@ attack:
 
 | 模式 | 损失函数 | 命令 |
 |------|----------|------|
-| **AdvDM** | 仅语义损失 | `python code/diff_mist.py attack.mode='advdm' attack.g_mode='+' attack.device="cuda:2"` |
-| **PhotoGuard** | 仅纹理损失 | `python code/diff_mist.py attack.mode='texture_only' attack.g_mode='+' attack.device="cuda:2"` |
-| **Mist** | 纹理损失 + 语义损失（联合） | `python code/diff_mist.py attack.mode='mist' attack.g_mode='+' attack.device="cuda:2"` |
-| **SDS(+)** | SDS 加速，梯度上升 | `python code/diff_mist.py attack.mode='sds' attack.g_mode='+' attack.device="cuda:2"` |
-| **SDS(-)** | SDS 加速，梯度下降 | `python code/diff_mist.py attack.mode='sds' attack.g_mode='-' attack.device="cuda:2"` |
-| **SDST(-)** | SDS + 目标纹理损失 | `python code/diff_mist.py attack.mode='sds' attack.g_mode='-' attack.using_target=True attack.device="cuda:2"` |
+| **AdvDM** | 仅语义损失 | `python code/diff_mist.py attack.mode='advdm' attack.g_mode='+' attack.device="cuda:1"` |
+| **PhotoGuard** | 仅纹理损失 | `python code/diff_mist.py attack.mode='texture_only' attack.g_mode='+' attack.device="cuda:1"` |
+| **Mist** | 纹理损失 + 语义损失（联合） | `python code/diff_mist.py attack.mode='mist' attack.g_mode='+' attack.device="cuda:1"` |
+| **SDS(+)** | SDS 加速，梯度上升 | `python code/diff_mist.py attack.mode='sds' attack.g_mode='+' attack.device="cuda:1"` |
+| **SDS(-)** | SDS 加速，梯度下降 | `python code/diff_mist.py attack.mode='sds' attack.g_mode='-' attack.device="cuda:1"` |
+| **SDST(-)** | SDS + 目标纹理损失 | `python code/diff_mist.py attack.mode='sds' attack.g_mode='-' attack.using_target=True attack.device="cuda:1"` |
 
 输出文件：
 - `[NAME]_attacked.png` — 添加对抗扰动后的图像
@@ -103,7 +103,7 @@ attack:
     g_mode: "+"           # 梯度方向：'+' 或 '-'
     textual_weight: 1.0   # 纹理损失权重（VAE 潜空间推离）
     mmdit_weight: 1.0     # MMDiT 专用损失权重
-    device: "cuda:2"      # GPU 设备
+    device: "cuda:1"      # GPU 设备
     model_name: "stabilityai/stable-diffusion-3.5-medium"  # ModelScope 模型 ID
 ```
 
@@ -123,25 +123,29 @@ attack:
 
 ```bash
 # 模式 O：仅纹理损失（基线）
-python code/diff_mist_SD3.py attack.mode='O' attack.g_mode='+' attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='O' attack.g_mode='+' attack.device="cuda:1"
 
 # 模式 A：跨模态对齐破坏
-python code/diff_mist_SD3.py attack.mode='A' attack.g_mode='+' attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='A' attack.g_mode='+' attack.device="cuda:1"
 
 # 模式 B：注意力特征偏移
-python code/diff_mist_SD3.py attack.mode='B' attack.g_mode='+' attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='B' attack.g_mode='+' attack.device="cuda:1"
 
 # 模式 C：时序一致性破坏
-python code/diff_mist_SD3.py attack.mode='C' attack.g_mode='+' attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='C' attack.g_mode='+' attack.device="cuda:1"
 
 # 模式 D：模态不平衡
-python code/diff_mist_SD3.py attack.mode='D' attack.g_mode='+' attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='D' attack.g_mode='+' attack.device="cuda:1"
 
 # 调整损失权重：增大 MMDiT 损失权重，减小纹理损失权重
-python code/diff_mist_SD3.py attack.mode='A' attack.textual_weight=0.5 attack.mmdit_weight=2.0 attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='A' attack.textual_weight=0.5 attack.mmdit_weight=2.0 attack.device="cuda:1"
 
 # 反向梯度方向
+python code/diff_mist_SD3.py attack.mode='O' attack.g_mode='-' attack.device="cuda:1"
 python code/diff_mist_SD3.py attack.mode='A' attack.g_mode='-' attack.device="cuda:1"
+python code/diff_mist_SD3.py attack.mode='B' attack.g_mode='-' attack.device="cuda:1"
+python code/diff_mist_SD3.py attack.mode='C' attack.g_mode='-' attack.device="cuda:1"
+python code/diff_mist_SD3.py attack.mode='D' attack.g_mode='-' attack.device="cuda:1"
 ```
 
 输出文件：
@@ -150,6 +154,89 @@ python code/diff_mist_SD3.py attack.mode='A' attack.g_mode='-' attack.device="cu
 - `[NAME]_sdedit_noise_0.3.png` — 噪声水平 0.3 的 SDEdit 去噪结果
 - `[NAME]_sdedit_noise_0.5.png` — 噪声水平 0.5 的 SDEdit 去噪结果
 - `[NAME]_loss.npy` — PGD 迭代过程中的损失曲线
+
+## 损失曲线可视化
+
+使用 `plot_loss.py` 可视化攻击过程中的损失曲线，帮助分析收敛行为和对比不同攻击模式。
+
+### 基础用法
+
+```bash
+# 绘制指定图像的损失曲线（所有模式）
+python code/plot_loss.py --root out_sd3 --image suzume
+
+# 绘制所有图像的损失曲线
+python code/plot_loss.py --root out_sd3 --all
+
+# 仅绘制指定模式
+python code/plot_loss.py --root out_sd3 --image suzume --modes A B C
+
+# 绘制指定梯度模式（g_mode：+ 表示上升，- 表示下降）
+python code/plot_loss.py --root out_sd3 --image suzume --gmodes +
+python code/plot_loss.py --root out_sd3 --image suzume --gmodes + -
+```
+
+### 高级选项
+
+```bash
+# 使用移动平均平滑曲线
+python code/plot_loss.py --root out_sd3 --image suzume --smooth 5
+
+# 将曲线归一化到 [0, 1] 以便对比
+python code/plot_loss.py --root out_sd3 --image suzume --normalize
+
+# 使用对数坐标
+python code/plot_loss.py --root out_sd3 --image suzume --log
+
+# 高 DPI 输出用于论文发表
+python code/plot_loss.py --root out_sd3 --image suzume --dpi 300
+
+# 绘制组件分解（textual vs MMDiT 损失）
+python code/plot_loss.py --root out_sd3 --image suzume --components
+```
+
+### 输出文件
+
+脚本会在指定输出目录（默认为 `<root>/figures/`）生成以下图表：
+
+| 文件 | 说明 |
+|------|------|
+| `{image}_loss_modes.png` | 各模式的总损失对比 |
+| `summary_loss_modes.png` | 所有图像的平均损失（均值 ± 标准差） |
+| `{image}_loss_components.png` | 每个模式的组件分解（textual / MMDiT / total） |
+| `summary_textual_loss.png` | 跨图像平均的纹理损失 |
+| `summary_mmdit_loss.png` | 跨图像平均的 MMDiT 损失 |
+
+### 命令行参数
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--root` | 实验输出根目录 | `out_sd3` |
+| `--image` | 指定图像名（不含 `_loss` 后缀） | `None`（需使用 `--all`） |
+| `--all` | 绘制根目录下所有图像 | `False` |
+| `--modes` | 绘制的模式：O, A, B, C, D | `all` |
+| `--gmodes` | 梯度模式：`+`（上升），`-`（下降） | `all` |
+| `--output` | 图表输出目录 | `<root>/figures/` |
+| `--dpi` | 图表输出 DPI | `150` |
+| `--smooth` | 移动平均窗口大小 | `None` |
+| `--log` | 使用对数坐标 | `False` |
+| `--normalize` | 将曲线归一化到 [0, 1] | `False` |
+| `--components` | 绘制 textual/mmdit/total 组件分解 | `False` |
+
+### 示例：完整对比
+
+```bash
+# 平滑、归一化后对比所有模式，并绘制组件分解
+python code/plot_loss.py \
+    --root out_sd3 \
+    --all \
+    --smooth 5 \
+    --normalize \
+    --dpi 300 \
+    --components
+```
+
+这将生成涵盖所有测试图像、所有攻击模式的综合损失可视化图表。
 
 ## 项目结构
 

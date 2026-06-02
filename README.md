@@ -70,12 +70,12 @@ Available modes:
 
 | Mode | Loss | Command |
 |------|------|---------|
-| **AdvDM** | Semantic loss only | `python code/diff_mist.py attack.mode='advdm' attack.g_mode='+' attack.device="cuda:2"` |
-| **PhotoGuard** | Textual loss only | `python code/diff_mist.py attack.mode='texture_only' attack.g_mode='+' attack.device="cuda:2"` |
-| **Mist** | Textural + Semantic (joint) | `python code/diff_mist.py attack.mode='mist' attack.g_mode='+' attack.device="cuda:2"` |
-| **SDS(+)** | SDS-accelerated, ascend gradient | `python code/diff_mist.py attack.mode='sds' attack.g_mode='+' attack.device="cuda:2"` |
-| **SDS(-)** | SDS-accelerated, descend gradient | `python code/diff_mist.py attack.mode='sds' attack.g_mode='-' attack.device="cuda:2"` |
-| **SDST(-)** | SDS + targeted textual loss | `python code/diff_mist.py attack.mode='sds' attack.g_mode='-' attack.using_target=True attack.device="cuda:2"` |
+| **AdvDM** | Semantic loss only | `python code/diff_mist.py attack.mode='advdm' attack.g_mode='+' attack.device="cuda:1"` |
+| **PhotoGuard** | Textual loss only | `python code/diff_mist.py attack.mode='texture_only' attack.g_mode='+' attack.device="cuda:1"` |
+| **Mist** | Textural + Semantic (joint) | `python code/diff_mist.py attack.mode='mist' attack.g_mode='+' attack.device="cuda:1"` |
+| **SDS(+)** | SDS-accelerated, ascend gradient | `python code/diff_mist.py attack.mode='sds' attack.g_mode='+' attack.device="cuda:1"` |
+| **SDS(-)** | SDS-accelerated, descend gradient | `python code/diff_mist.py attack.mode='sds' attack.g_mode='-' attack.device="cuda:1"` |
+| **SDST(-)** | SDS + targeted textual loss | `python code/diff_mist.py attack.mode='sds' attack.g_mode='-' attack.using_target=True attack.device="cuda:1"` |
 
 The output includes:
 - `[NAME]_attacked.png` — adversarially perturbed image
@@ -103,7 +103,7 @@ attack:
     g_mode: "+"           # gradient direction: '+' or '-'
     textual_weight: 1.0   # weight for textual loss (VAE latent push)
     mmdit_weight: 1.0     # weight for MMDiT-specific loss
-    device: "cuda:2"      # GPU device
+    device: "cuda:1"      # GPU device
     model_name: "stabilityai/stable-diffusion-3.5-medium"  # ModelScope model ID
 ```
 
@@ -123,22 +123,22 @@ The joint loss follows the design: **JOINT LOSS = TEXTUAL LOSS + λ · MMDiT LOS
 
 ```bash
 # Mode O: Textual Loss only (baseline)
-python code/diff_mist_SD3.py attack.mode='O' attack.g_mode='+' attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='O' attack.g_mode='+' attack.device="cuda:1"
 
 # Mode A: Cross-Modal Alignment Disruption
-python code/diff_mist_SD3.py attack.mode='A' attack.g_mode='+' attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='A' attack.g_mode='+' attack.device="cuda:1"
 
 # Mode B: Attention Feature Shift
-python code/diff_mist_SD3.py attack.mode='B' attack.g_mode='+' attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='B' attack.g_mode='+' attack.device="cuda:1"
 
 # Mode C: Temporal Consistency Break
-python code/diff_mist_SD3.py attack.mode='C' attack.g_mode='+' attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='C' attack.g_mode='+' attack.device="cuda:1"
 
 # Mode D: Modality Imbalance
-python code/diff_mist_SD3.py attack.mode='D' attack.g_mode='+' attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='D' attack.g_mode='+' attack.device="cuda:1"
 
 # Adjust loss weights: emphasize MMDiT loss over textual loss
-python code/diff_mist_SD3.py attack.mode='A' attack.textual_weight=0.5 attack.mmdit_weight=2.0 attack.device="cuda:2"
+python code/diff_mist_SD3.py attack.mode='A' attack.textual_weight=0.5 attack.mmdit_weight=2.0 attack.device="cuda:1"
 
 # Reverse gradient direction
 python code/diff_mist_SD3.py attack.mode='A' attack.g_mode='-' attack.device="cuda:1"
@@ -151,6 +151,89 @@ The output includes:
 - `[NAME]_sdedit_noise_0.5.png` — SDEdit denoising from noise level 0.5
 - `[NAME]_loss.npy` — loss curve over PGD iterations
 
+## Loss Curve Visualization
+
+Use `plot_loss.py` to visualize loss curves during the attack process. This helps analyze convergence behavior and compare different attack modes.
+
+### Basic Usage
+
+```bash
+# Plot loss curves for a specific image (all modes)
+python code/plot_loss.py --root out_sd3 --image suzume
+
+# Plot for all images
+python code/plot_loss.py --root out_sd3 --all
+
+# Plot specific modes only
+python code/plot_loss.py --root out_sd3 --image suzume --modes A B C
+
+# Plot specific gradient modes (g_mode: '+' for ascent, '-' for descent)
+python code/plot_loss.py --root out_sd3 --image suzume --gmodes +
+python code/plot_loss.py --root out_sd3 --image suzume --gmodes + -
+```
+
+### Advanced Options
+
+```bash
+# Smooth the curves with a moving average window
+python code/plot_loss.py --root out_sd3 --image suzume --smooth 5
+
+# Normalize curves to [0, 1] for comparison
+python code/plot_loss.py --root out_sd3 --image suzume --normalize
+
+# Use log scale for y-axis
+python code/plot_loss.py --root out_sd3 --image suzume --log
+
+# High DPI output for publications
+python code/plot_loss.py --root out_sd3 --image suzume --dpi 300
+
+# Plot component breakdown (textual vs MMDiT loss)
+python code/plot_loss.py --root out_sd3 --image suzume --components
+```
+
+### Output Files
+
+The script generates the following figures in the specified output directory (default: `<root>/figures/`):
+
+| File | Description |
+|------|-------------|
+| `{image}_loss_modes.png` | Total loss comparison across modes |
+| `summary_loss_modes.png` | Average loss across all images (mean ± std) |
+| `{image}_loss_components.png` | Component breakdown (textual / MMDiT / total) per mode |
+| `summary_textual_loss.png` | Textual loss averaged across images |
+| `summary_mmdit_loss.png` | MMDiT loss averaged across images |
+
+### Command-line Arguments
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--root` | Root directory containing experiment outputs | `out_sd3` |
+| `--image` | Specific image name (without `_loss` suffix) | `None` (use `--all` instead) |
+| `--all` | Plot all images found under root | `False` |
+| `--modes` | Modes to plot: O, A, B, C, D | `all` |
+| `--gmodes` | Gradient modes: `+` (ascent), `-` (descent) | `all` |
+| `--output` | Output directory for figures | `<root>/figures/` |
+| `--dpi` | Figure DPI for output | `150` |
+| `--smooth` | Moving average window size | `None` |
+| `--log` | Use log scale for y-axis | `False` |
+| `--normalize` | Normalize each curve to [0, 1] | `False` |
+| `--components` | Plot textual/mmdit/total component breakdown | `False` |
+
+### Example: Full Comparison
+
+```bash
+# Compare all modes with smoothing and normalization
+python code/plot_loss.py \
+    --root out_sd3 \
+    --all \
+    --smooth 5 \
+    --normalize \
+    --dpi 300 \
+    --components
+```
+
+This will generate comprehensive loss visualizations comparing all attack modes across all test images.
+
 ## Project Structure
 
 ```
@@ -160,6 +243,7 @@ Diff-Protect/
 │   ├── diff_mist_SD3.py      # SD 3.5 MMDiT attack launch script
 │   ├── attacks.py            # SD v1.4 PGD/SDS attack implementations
 │   ├── attacks_SD3.py        # SD 3.5 MMDiT attack + 4 loss functions
+│   ├── plot_loss.py          # Loss curve visualization tool
 │   ├── utils.py              # Utility functions (image I/O, metrics)
 │   ├── eval_gen.py           # Generation quality evaluation
 │   ├── eval.py               # Evaluation metrics

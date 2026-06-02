@@ -9,6 +9,9 @@
 #   # Plot specific modes
 #   python code/plot_loss.py --root out_sd3 --image suzume --modes O A B C D
 #
+#   # Plot specific gradient modes (g_mode)
+#   python code/plot_loss.py --root out_sd3 --image suzume --gmodes + -
+#
 #   # Plot all images
 #   python code/plot_loss.py --root out_sd3 --all
 #
@@ -51,6 +54,21 @@ LINESTYLES = {
     'B': '-',
     'C': '-',
     'D': '-',
+}
+
+GMODE_COLORS = {
+    '+': '#333333',   # black/dark gray for gradient ascent
+    '-': '#999999',   # light gray for gradient descent
+}
+
+GMODE_LABELS = {
+    '+': '(+)',
+    '-': '(-)',
+}
+
+GMODE_LINESTYLES = {
+    '+': '-',
+    '-': ':',
 }
 
 COMPONENT_COLORS = {
@@ -167,7 +185,7 @@ def _normalize(arr):
     return np.zeros_like(arr)
 
 
-def plot_mode_comparison(images, modes=None, output_dir='.', figsize=(8, 5),
+def plot_mode_comparison(images, modes=None, gmodes=None, output_dir='.', figsize=(8, 5),
                          dpi=150, smooth_window=None, log_scale=False,
                          normalize=False):
     """Plot total loss curves comparing different modes for each image."""
@@ -177,9 +195,16 @@ def plot_mode_comparison(images, modes=None, output_dir='.', figsize=(8, 5),
                                if x[0]['mode'] in mode_order else 99)
 
         fig, ax = plt.subplots(figsize=figsize)
+
+        # Check if we have multiple g_modes to differentiate
+        has_multiple_gmodes = len(set(c[0].get('g_mode', '+') for c in curves_sorted)) > 1
+
         for config, loss_data in curves_sorted:
             mode = config['mode']
+            g_mode = config.get('g_mode', '+')
             if modes and mode not in modes:
+                continue
+            if gmodes and g_mode not in gmodes:
                 continue
 
             loss = _smooth(loss_data['total'], smooth_window)
@@ -187,10 +212,21 @@ def plot_mode_comparison(images, modes=None, output_dir='.', figsize=(8, 5),
                 loss = _normalize(loss)
 
             steps = np.arange(len(loss))
+            # Adjust style based on g_mode
+            if has_multiple_gmodes:
+                color = GMODE_COLORS.get(g_mode, '#333')
+                linestyle = GMODE_LINESTYLES.get(g_mode, '-')
+                # Combine mode label with g_mode suffix
+                label = f"{MODE_LABELS.get(mode, f'Mode {mode}')} {GMODE_LABELS.get(g_mode, '')}"
+            else:
+                color = MODE_COLORS.get(mode, '#333')
+                linestyle = LINESTYLES.get(mode, '-')
+                label = MODE_LABELS.get(mode, f'Mode {mode}')
+
             ax.plot(steps, loss,
-                    color=MODE_COLORS.get(mode, '#333'),
-                    linestyle=LINESTYLES.get(mode, '-'),
-                    linewidth=1.8, label=MODE_LABELS.get(mode, f'Mode {mode}'),
+                    color=color,
+                    linestyle=linestyle,
+                    linewidth=1.8, label=label,
                     alpha=0.9)
 
         ax.set_xlabel('PGD Step', fontsize=12)
@@ -211,13 +247,29 @@ def plot_mode_comparison(images, modes=None, output_dir='.', figsize=(8, 5),
     # ---- Summary (average across images) ----
     if len(images) > 1:
         fig, ax = plt.subplots(figsize=figsize)
-        for mode in mode_order:
+
+        # Collect all unique (mode, g_mode) combinations
+        all_combinations = set()
+        for img_name, curves in images.items():
+            for config, _ in curves:
+                all_combinations.add((config['mode'], config.get('g_mode', '+')))
+
+        # Sort by mode order, then by g_mode
+        all_combinations = sorted(all_combinations,
+                                   key=lambda x: (mode_order.index(x[0]) if x[0] in mode_order else 99, x[1]))
+
+        has_multiple_gmodes = len(set(g for _, g in all_combinations)) > 1
+
+        for mode, g_mode in all_combinations:
             if modes and mode not in modes:
                 continue
+            if gmodes and g_mode not in gmodes:
+                continue
+
             all_losses = []
             for img_name, curves in images.items():
                 for config, loss_data in curves:
-                    if config['mode'] == mode:
+                    if config['mode'] == mode and config.get('g_mode', '+') == g_mode:
                         loss = _smooth(loss_data['total'], smooth_window)
                         if normalize:
                             loss = _normalize(loss)
@@ -230,11 +282,20 @@ def plot_mode_comparison(images, modes=None, output_dir='.', figsize=(8, 5),
             std = np.std([l[:min_len] for l in all_losses], axis=0)
             steps = np.arange(min_len)
 
-            ax.plot(steps, avg, color=MODE_COLORS.get(mode, '#333'),
-                    linestyle=LINESTYLES.get(mode, '-'), linewidth=2.0,
-                    label=MODE_LABELS.get(mode, f'Mode {mode}'))
+            if has_multiple_gmodes:
+                color = GMODE_COLORS.get(g_mode, '#333')
+                linestyle = GMODE_LINESTYLES.get(g_mode, '-')
+                label = f"{MODE_LABELS.get(mode, f'Mode {mode}')} {GMODE_LABELS.get(g_mode, '')}"
+            else:
+                color = MODE_COLORS.get(mode, '#333')
+                linestyle = LINESTYLES.get(mode, '-')
+                label = MODE_LABELS.get(mode, f'Mode {mode}')
+
+            ax.plot(steps, avg, color=color,
+                    linestyle=linestyle, linewidth=2.0,
+                    label=label)
             ax.fill_between(steps, avg - std, avg + std,
-                            color=MODE_COLORS.get(mode, '#333'), alpha=0.12)
+                            color=color, alpha=0.12)
 
         ax.set_xlabel('PGD Step', fontsize=12)
         ax.set_ylabel('Normalized Loss' if normalize else 'Loss', fontsize=12)
@@ -252,7 +313,7 @@ def plot_mode_comparison(images, modes=None, output_dir='.', figsize=(8, 5),
         plt.close(fig)
 
 
-def plot_component_comparison(images, modes=None, output_dir='.', figsize=(8, 5),
+def plot_component_comparison(images, modes=None, gmodes=None, output_dir='.', figsize=(8, 5),
                               dpi=150, smooth_window=None, log_scale=False,
                               normalize=False):
     """Plot textual / mmdit / total loss components for each mode separately.
@@ -266,18 +327,20 @@ def plot_component_comparison(images, modes=None, output_dir='.', figsize=(8, 5)
         curves_sorted = sorted(curves, key=lambda x: mode_order.index(x[0]['mode'])
                                if x[0]['mode'] in mode_order else 99)
 
-        n_modes = len([c for c in curves_sorted if (not modes) or c[0]['mode'] in modes])
+        # Filter by modes and gmodes
+        filtered_curves = [(c, d) for c, d in curves_sorted
+                          if (not modes or c['mode'] in modes) and (not gmodes or c.get('g_mode', '+') in gmodes)]
+
+        n_modes = len(filtered_curves)
         if n_modes == 0:
             continue
 
         fig, axes = plt.subplots(1, n_modes, figsize=(4.5 * n_modes, 5), squeeze=False)
         col = 0
 
-        for config, loss_data in curves_sorted:
+        for config, loss_data in filtered_curves:
             mode = config['mode']
-            if modes and mode not in modes:
-                continue
-
+            g_mode = config.get('g_mode', '+')
             ax = axes[0, col]
             ax2 = ax.twinx()  # right y-axis for mmdit
 
@@ -311,7 +374,7 @@ def plot_component_comparison(images, modes=None, output_dir='.', figsize=(8, 5)
             ax2.set_ylabel('MMDiT Loss', fontsize=10, color=COMPONENT_COLORS['mmdit'])
             ax.tick_params(axis='y', labelcolor='#333333')
             ax2.tick_params(axis='y', labelcolor=COMPONENT_COLORS['mmdit'])
-            ax.set_title(f'Mode {mode}', fontsize=12, fontweight='bold')
+            ax.set_title(f'Mode {mode} {GMODE_LABELS.get(g_mode, "")}', fontsize=12, fontweight='bold')
 
             # Merge legends from both axes
             lines1, labels1 = ax.get_legend_handles_labels()
@@ -338,13 +401,29 @@ def plot_component_comparison(images, modes=None, output_dir='.', figsize=(8, 5)
     if len(images) > 1:
         for comp_key in ['textual', 'mmdit']:
             fig, ax = plt.subplots(figsize=figsize)
-            for mode in mode_order:
+
+            # Collect all unique (mode, g_mode) combinations
+            all_combinations = set()
+            for img_name, curves in images.items():
+                for config, _ in curves:
+                    all_combinations.add((config['mode'], config.get('g_mode', '+')))
+
+            # Sort by mode order, then by g_mode
+            all_combinations = sorted(all_combinations,
+                                       key=lambda x: (mode_order.index(x[0]) if x[0] in mode_order else 99, x[1]))
+
+            has_multiple_gmodes = len(set(g for _, g in all_combinations)) > 1
+
+            for mode, g_mode in all_combinations:
                 if modes and mode not in modes:
                     continue
+                if gmodes and g_mode not in gmodes:
+                    continue
+
                 all_losses = []
                 for img_name, curves in images.items():
                     for config, loss_data in curves:
-                        if config['mode'] == mode:
+                        if config['mode'] == mode and config.get('g_mode', '+') == g_mode:
                             arr = _smooth(loss_data[comp_key], smooth_window)
                             if normalize:
                                 arr = _normalize(arr)
@@ -356,11 +435,20 @@ def plot_component_comparison(images, modes=None, output_dir='.', figsize=(8, 5)
                 std = np.std([l[:min_len] for l in all_losses], axis=0)
                 steps = np.arange(min_len)
 
-                ax.plot(steps, avg, color=MODE_COLORS.get(mode, '#333'),
-                        linestyle=LINESTYLES.get(mode, '-'), linewidth=1.8,
-                        label=MODE_LABELS.get(mode, f'Mode {mode}'))
+                if has_multiple_gmodes:
+                    color = GMODE_COLORS.get(g_mode, '#333')
+                    linestyle = GMODE_LINESTYLES.get(g_mode, '-')
+                    label = f"{MODE_LABELS.get(mode, f'Mode {mode}')} {GMODE_LABELS.get(g_mode, '')}"
+                else:
+                    color = MODE_COLORS.get(mode, '#333')
+                    linestyle = LINESTYLES.get(mode, '-')
+                    label = MODE_LABELS.get(mode, f'Mode {mode}')
+
+                ax.plot(steps, avg, color=color,
+                        linestyle=linestyle, linewidth=1.8,
+                        label=label)
                 ax.fill_between(steps, avg - std, avg + std,
-                                color=MODE_COLORS.get(mode, '#333'), alpha=0.12)
+                                color=color, alpha=0.12)
 
             ax.set_xlabel('PGD Step', fontsize=12)
             ax.set_ylabel('Normalized Loss' if normalize else 'Loss', fontsize=12)
@@ -390,6 +478,9 @@ def main():
     parser.add_argument('--modes', nargs='+', default=None,
                         choices=['O', 'A', 'B', 'C', 'D'],
                         help='Modes to plot (default: all)')
+    parser.add_argument('--gmodes', nargs='+', default=None,
+                        choices=['+', '-'],
+                        help='Gradient modes to plot: (+) ascent, (-) descent (default: all)')
     parser.add_argument('--output', type=str, default=None,
                         help='Output directory for figures (default: <root>/figures/)')
     parser.add_argument('--dpi', type=int, default=150,
@@ -441,7 +532,7 @@ def main():
 
     # Always plot mode comparison (total loss)
     plot_mode_comparison(
-        images, modes=args.modes, output_dir=output_dir,
+        images, modes=args.modes, gmodes=args.gmodes, output_dir=output_dir,
         dpi=args.dpi, smooth_window=args.smooth,
         log_scale=args.log, normalize=args.normalize,
     )
@@ -450,7 +541,7 @@ def main():
     any_components = any(has_comp for *_, has_comp in loaded)
     if args.components or any_components:
         plot_component_comparison(
-            images, modes=args.modes, output_dir=output_dir,
+            images, modes=args.modes, gmodes=args.gmodes, output_dir=output_dir,
             dpi=args.dpi, smooth_window=args.smooth,
             log_scale=args.log, normalize=args.normalize,
         )
