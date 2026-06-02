@@ -109,20 +109,24 @@ attack:
 
 #### MMDiT Attack Modes
 
-The joint loss follows the design: **JOINT LOSS = TEXTUAL LOSS + λ · MMDiT LOSS**, where TEXTUAL LOSS pushes the VAE latent toward a wrong direction (same as the original Mist), and the MMDiT LOSS exploits the architectural specifics of SD3's Multimodal DiT.
+The joint loss follows the design: **JOINT LOSS = TEXTURAL LOSS + λ · MMDiT LOSS**, where TEXTURAL LOSS pushes the VAE latent toward a wrong direction (same as the original Mist), and the MMDiT LOSS exploits the architectural specifics of SD3's Multimodal DiT.
+
+**g_mode='+'** 意味着梯度上升（gradient ascent），即最大化损失：
+- textual loss 越大越好：图像在 VAE latent 中远离目标图像
+- mmdit loss 越大越好：语义差异越大，破坏越有效
 
 | Mode | Name | Target | Principle |
 |------|------|--------|-----------|
-| **O** | Textual Loss Only (baseline) | VAE latent space | Push VAE latent toward a wrong direction; no MMDiT forward pass, used as baseline comparison |
+| **O** | Textural Loss + Semantic Loss (baseline) | VAE latent space + Denoiser | Maximize VAE latent distance from target + maximize denoiser's prediction magnitude (semantic disruption) |
 | **A** | Cross-Modal Alignment Disruption | Joint Attention | Maximize entropy of text→image attention weights, making semantic injection from text uniform/random |
-| **B** | Attention Feature Shift | MMDiT intermediate features | Maximize cosine distance between adversarial and clean features + disrupt Gram matrix (style statistics) |
+| **B** | Attention Feature Shift | MMDiT intermediate features | Maximize cosine distance between adversarial and clean features + maximize Gram matrix L1 distance (disrupt style/texture statistics) |
 | **C** | Temporal Consistency Break | Flow matching trajectory | Maximize angle between adversarial and clean velocity predictions (v-prediction), causing ODE trajectory to diverge |
 | **D** | Modality Imbalance | Dual-stream architecture | Force image stream feature variance explosion + enforce cross-modal (Q_img, K_txt) orthogonality |
 
 #### Usage
 
 ```bash
-# Mode O: Textual Loss only (baseline)
+# Mode O: Textural Loss + Semantic Loss (baseline)
 python code/diff_mist_SD3.py attack.mode='O' attack.g_mode='+' attack.device="cuda:1"
 
 # Mode A: Cross-Modal Alignment Disruption
@@ -281,11 +285,11 @@ Diff-Protect/
 
 SD3's MMDiT uses Joint Attention where text tokens and image latent tokens are concatenated for self-attention, enabling cross-modal perturbation propagation. The five attack modes are:
 
-0. **Mode O — Textual Loss Only (Baseline)**: Only uses the VAE textual loss $\min_\delta \|\mathcal{E}(y) - \mathcal{E}(x+\delta)\|_2$, pushing the latent representation toward a wrong target. No MMDiT forward pass is needed, making it significantly faster. Serves as the baseline to evaluate the added benefit of MMDiT-specific losses.
+0. **Mode O — Textural Loss + Semantic Loss (Baseline)**: Combines the VAE textural loss $\max_\delta \|\mathcal{E}(y) - \mathcal{E}(x+\delta)\|_2$ (pushing the latent representation away from the target) with a semantic loss based on the denoiser's prediction magnitude. The semantic loss is implemented as $\max_\delta \|v_{\text{pred}}(x+\delta)\|_2$, where a larger prediction magnitude indicates greater semantic disruption. Both losses are maximized via gradient ascent (g_mode='+'). Serves as the baseline to evaluate the added benefit of MMDiT-specific losses.
 
 1. **Loss A — Cross-Modal Alignment Disruption**: In Joint Attention, the text→image attention block ($\text{attn}[:N_i, N_i:]$) reflects how semantics are injected. Maximizing its entropy makes the semantic guidance uniform/random, causing generation to lose prompt alignment.
 
-2. **Loss B — Attention Feature Shift**: The combined features after Joint Attention blocks define the image's representation in MMDiT's feature manifold. Maximizing cosine distance between adversarial and clean features (using cosine over L2, as direction matters more than magnitude in high-dimensional DiT features) pushes the representation off the clean manifold.
+2. **Loss B — Attention Feature Shift**: The combined features after Joint Attention blocks define the image's representation in MMDiT's feature manifold. Maximizing cosine distance between adversarial and clean features (using cosine over L2, as direction matters more than magnitude in high-dimensional DiT features) pushes the representation off the clean manifold. Additionally, maximizing the L1 distance between Gram matrices of adversarial and clean features disrupts style/texture statistics.
 
 3. **Loss C — Temporal Consistency Break**: SD3 uses flow matching with v-prediction. By maximizing the angle between adversarial and clean velocity predictions ($\min \cos(v_{adv}, v_{clean})$), the denoising trajectory diverges, and the non-linearity of subsequent steps amplifies the perturbation.
 

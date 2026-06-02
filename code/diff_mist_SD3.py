@@ -9,11 +9,16 @@
 #   python code/diff_mist_SD3.py attack.mode='D' attack.g_mode='-' attack.device="cuda:1"
 #
 # Modes:
-#   O: Textual Loss only (仅纹理损失，作为对比基线)
+#   O: Textural Loss + Semantic Loss (纹理损失+语义损失，作为基线)
+#      - Textural: Maximize VAE latent distance from target
+#      - Semantic: Maximize denoiser prediction magnitude
 #   A: Cross-Modal Alignment Disruption (破坏跨模态对齐)
 #   B: Attention Feature Shift (特征偏移)
 #   C: Temporal Consistency Break (时序一致性破坏)
 #   D: Modality Imbalance (模态不平衡)
+#
+# g_mode='+' = Gradient Ascent (maximize loss)
+# g_mode='-' = Gradient Descent (minimize loss)
 
 import os
 import numpy as np
@@ -32,7 +37,7 @@ import glob
 import hydra
 
 from utils import mp, si, cprint
-from attacks_SD3 import SD3_Linf_PGD, AttentionMapHook, register_feature_hooks, restore_processors
+from attacks_SD3 import SD3_Linf_PGD, AttentionMapHook, register_feature_hooks, restore_processors, denoiser_prediction_loss
 
 ssl._create_default_https_context = ssl._create_unverified_context
 os.environ['TORCH_HOME'] = os.getcwd()
@@ -169,8 +174,8 @@ class SD3_target_model(nn.Module):
     def forward(self, x):
         """Compute the joint loss for PGD attack.
 
-        Mode O: Textual Loss only (baseline, no MMDiT forward pass)
-        Modes A-D: JOINT LOSS = textual_weight * TEXTUAL LOSS + mmdit_weight * MMDiT LOSS
+        Mode O: Textural Loss + Semantic Loss (baseline with denoiser prediction error)
+        Modes A-D: JOINT LOSS = textual_weight * TEXTURAL LOSS + mmdit_weight * MMDiT LOSS
 
         The returned loss is what PGD will minimize. For g_mode='+', we negate
         to achieve maximization.
@@ -180,6 +185,7 @@ class SD3_target_model(nn.Module):
             feature_divergence_loss,
             trajectory_divergence_loss,
             modality_imbalance_loss,
+            denoiser_prediction_loss,
             AttentionMapHook,
             register_feature_hooks,
         )
@@ -187,14 +193,39 @@ class SD3_target_model(nn.Module):
         device = x.device
         g_dir = 1. if self.g_mode == '+' else -1.
 
-        # ---- Textual Loss (VAE latent push) ----
+        # ---- Textural Loss (VAE latent push) ----
         z_x, textual_loss = self.get_components(x)
 
-        # ---- Mode O: Textual Loss only (baseline) ----
+        # ---- Mode O: Textural Loss + Semantic Loss (baseline) ----
         if self.mode == 'O':
+            transformer = self.pipe.transformer
+
+            # Sample random timestep for flow matching
+            t_val = torch.rand(1, device=device).item()
+            timestep = torch.tensor([t_val], device=device, dtype=transformer.dtype)
+
+            # Forward through MMDiT for semantic loss
+            v_pred = transformer(
+                hidden_states=z_x.to(transformer.dtype),
+                timestep=timestep,
+                encoder_hidden_states=self.prompt_embeds.to(transformer.dtype),
+                pooled_projections=self.pooled_prompt_embeds.to(transformer.dtype),
+                return_dict=False,
+            )[0]
+
+            # Semantic loss: denoiser's prediction magnitude (larger = more semantic disruption)
+            semantic_loss = denoiser_prediction_loss(v_pred)
+
+            # Joint loss: Textural + Semantic
+            # g_dir is applied at the PGD update step, not here
+            joint_loss = self.textual_weight * textual_loss + self.mmdit_weight * semantic_loss
+
             # Store components for logging
-            self._last_components = {'textual': textual_loss.item(), 'mmdit': 0.0}
-            return textual_loss * g_dir
+            self._last_components = {
+                'textual': textual_loss.item(),
+                'mmdit': semantic_loss.item() if isinstance(semantic_loss, torch.Tensor) else float(semantic_loss),
+            }
+            return joint_loss
 
         # ---- MMDiT Loss ----
         hook = AttentionMapHook()

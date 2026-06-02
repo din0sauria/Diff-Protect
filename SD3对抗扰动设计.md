@@ -155,3 +155,10 @@ def modality_imbalance_loss(img_stream_feat, txt_stream_feat):
 1.  **梯度传播路径**：确保 Loss 能通过 MMDiT 的 Joint Attention 反传到 Latent。
 2.  **v-prediction 适配**：SD3 默认使用 v-prediction 而非 epsilon-prediction。所有基于去噪方向的 Loss 必须使用 `v_target` 而非 `eps_target`。
 3.  **多分辨率感知**：MMDiT 支持多种分辨率，Attention Map 的尺寸随 latent size 变化
+
+## 关于论文
+
+1.前面的照着写，介绍mmdit
+2.介绍四种方法
+3.baseline选mist，Lt+Ls/Lt+ABCD做对比，说明Lt+Ls比我们差就行（解释原因：结构不一样，直接用噪声预测的结果作为优化的依据不能很好地优化）
+4.图片（结构图/之前方法的图）

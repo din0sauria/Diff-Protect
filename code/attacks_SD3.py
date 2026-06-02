@@ -239,7 +239,7 @@ def feature_divergence_loss(feat_adv_list, feat_clean_list):
         feat_clean_list: list of clean image stream features [B, N_img, D] per block
 
     Returns:
-        loss scalar (to be minimized => feature divergence maximized)
+        loss scalar (to be minimized via gradient ascent => feature divergence maximized)
     """
     total_loss = 0.0
     count = 0
@@ -251,13 +251,13 @@ def feature_divergence_loss(feat_adv_list, feat_clean_list):
         cos_sim = F.cosine_similarity(feat_adv.flatten(1), feat_clean.flatten(1), dim=1)
         cos_loss = cos_sim.mean()  # minimize this => maximize divergence
 
-        # Gram matrix style disruption
+        # Gram matrix style disruption (maximize difference => minimize negative similarity)
         gram_adv = _gram_matrix(feat_adv)
         gram_clean = _gram_matrix(feat_clean)
-        style_loss = F.l1_loss(gram_adv, gram_clean)  # minimize similarity
+        style_loss = -F.l1_loss(gram_adv, gram_clean)  # maximize L1 distance between Gram matrices
 
-        # Combined: minimize cos_sim + minimize gram similarity
-        total_loss = total_loss + cos_loss - 0.1 * style_loss
+        # Combined: minimize cos_sim + maximize style divergence
+        total_loss = total_loss + cos_loss + style_loss
         count += 1
 
     if count == 0:
@@ -349,6 +349,28 @@ def modality_imbalance_loss(img_stream_feats, txt_stream_feats):
     return total_loss / count
 
 
+def denoiser_prediction_loss(v_pred):
+    """Loss O (Semantic): Denoiser's Prediction Error
+
+    Semantic loss based on the denoiser's prediction magnitude.
+    This measures the semantic difference as the norm of the predicted
+    velocity in the flow matching framework. Maximizing this loss increases
+    the prediction magnitude, indicating greater semantic disruption.
+
+    Args:
+        v_pred: velocity prediction from MMDiT [B, C, H, W]
+
+    Returns:
+        loss scalar (positive L2 norm)
+        For g_mode='+': maximize this loss → increase prediction magnitude
+        For g_mode='-': minimize this loss → decrease prediction magnitude
+    """
+    # Semantic loss: positive L2 norm of prediction
+    # Larger norm = larger prediction = greater semantic difference
+    # Ensure the loss matches the dtype of v_pred for proper gradients
+    return v_pred.norm().to(v_pred.dtype)
+
+
 # ============================================================
 # SD3 PGD Attack with MMDiT losses
 # ============================================================
@@ -357,15 +379,15 @@ class SD3_Linf_PGD:
     """PGD attack for SD3 with MMDiT-specific loss functions.
 
     Supports 5 attack modes:
-        O: Textual Loss only (baseline, no MMDiT forward pass)
+        O: Textural Loss + Semantic Loss (baseline with denoiser prediction error)
         A: Cross-Modal Alignment Disruption
         B: Attention Feature Shift
         C: Temporal Consistency Break
         D: Modality Imbalance
 
-    Modes A-D combine with TEXTUAL LOSS (VAE latent push):
-        JOINT LOSS = textual_weight * TEXTUAL LOSS + mmdit_weight * MMDiT LOSS
-    Mode O uses TEXTUAL LOSS only as a baseline comparison.
+    Modes A-D combine with TEXTURAL LOSS (VAE latent push):
+        JOINT LOSS = textual_weight * TEXTURAL LOSS + mmdit_weight * MMDiT LOSS
+    Mode O uses TEXTURAL LOSS + SEMANTIC LOSS as a baseline comparison.
     """
 
     def __init__(self, net, fn, epsilon, steps, eps_iter, clip_min=-1.0, clip_max=1.0,
@@ -499,7 +521,7 @@ class SD3_Linf_PGD:
         This follows the design in SD3对抗扰动设计.md:
         JOINT LOSS = TEXTUAL LOSS + lambda * MMDiT LOSS
 
-        Mode 'O': Textual Loss only (baseline, skips MMDiT forward for speed)
+        Mode 'O': Textural Loss + Semantic Loss (baseline with denoiser prediction error)
 
         Returns:
             (loss_tensor, components_dict) where components_dict has keys:
@@ -508,23 +530,54 @@ class SD3_Linf_PGD:
         """
         pipe = self.net.pipe
 
-        # ---- Mode O: Textual Loss only (baseline) ----
+        # ---- Mode O: Textural Loss + Semantic Loss (baseline) ----
         if self.mmdit_mode == 'O':
+            transformer = pipe.transformer
+
+            # Encode to latent space
             z_adv = pipe.vae.encode(X_adv.to(pipe.vae.dtype)).latent_dist.mean
             z_adv = (z_adv - pipe.vae.config.shift_factor) * pipe.vae.config.scaling_factor
-            z_adv = z_adv.to(X_adv.dtype)
+            z_adv = z_adv.to(pipe.transformer.dtype)
 
+            # Sample timestep for flow matching
+            t_val = torch.rand(1, device=device).item()
+            timestep = torch.tensor([t_val], device=device, dtype=pipe.transformer.dtype)
+
+            # Get prompt embeddings
+            prompt_embeds = self.net.prompt_embeds.to(pipe.transformer.dtype)
+            pooled_embeds = self.net.pooled_prompt_embeds.to(pipe.transformer.dtype)
+
+            # Forward through MMDiT for semantic loss
+            v_pred = transformer(
+                hidden_states=z_adv,
+                timestep=timestep,
+                encoder_hidden_states=prompt_embeds,
+                pooled_projections=pooled_embeds,
+                return_dict=False,
+            )[0]
+
+            # Semantic loss: denoiser's prediction error
+            semantic_loss = denoiser_prediction_loss(v_pred)
+
+            # Textural loss: VAE latent push toward target
             textual_loss_val = 0.0
-            textual_loss = torch.tensor(0.0, device=device)
+            textual_loss = torch.tensor(0.0, device=device, dtype=pipe.transformer.dtype)
             if target_image is not None:
                 with torch.no_grad():
                     z_target = pipe.vae.encode(target_image.to(pipe.vae.dtype)).latent_dist.mean
                     z_target = (z_target - pipe.vae.config.shift_factor) * pipe.vae.config.scaling_factor
-                    z_target = z_target.to(X_adv.dtype).detach()
+                    z_target = z_target.to(pipe.transformer.dtype).detach()
                 textual_loss = self.cirt(z_adv, z_target)
                 textual_loss_val = textual_loss.item()
 
-            return textual_loss, {'textual': textual_loss_val, 'mmdit': 0.0}
+            # Joint loss: Textural + Semantic
+            joint_loss = self.textual_weight * textual_loss + self.mmdit_weight * semantic_loss
+
+            components = {
+                'textual': textual_loss_val,
+                'mmdit': semantic_loss.item() if isinstance(semantic_loss, torch.Tensor) else float(semantic_loss),
+            }
+            return joint_loss, components
 
         # ---- Modes A/B/C/D: Joint Loss with MMDiT ----
         hook = AttentionMapHook()
